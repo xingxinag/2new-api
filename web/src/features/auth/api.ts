@@ -177,6 +177,28 @@ export async function telegramLogin(
 }
 
 // ----------------------------------------------------------------------------
+// Invitation Code
+// ----------------------------------------------------------------------------
+
+// Verify invitation code without revealing inviter info
+export async function verifyInvitationCode(code: string): Promise<{
+  success: boolean
+  data?: { valid: boolean }
+}> {
+  const res = await api.post('/api/invitation/verify', { code })
+  return res.data
+}
+
+// Verify redemption code without consuming it
+export async function verifyRedemptionCode(key: string): Promise<{
+  success: boolean
+  data?: { valid: boolean }
+}> {
+  const res = await api.post('/api/redemption/verify', { key })
+  return res.data
+}
+
+// ----------------------------------------------------------------------------
 // Registration
 // ----------------------------------------------------------------------------
 

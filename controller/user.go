@@ -218,6 +218,39 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+
+	// 邀请码门禁：开启后必须提供 invitation_codes 表中的有效邀请码
+	if common.InvitationCodeRequired {
+		invCode := strings.TrimSpace(user.InvitationCode)
+		if invCode == "" {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "邀请码不能为空"})
+			return
+		}
+		if result := model.ValidateInvitationCode(invCode); !result.Valid {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": result.ErrorMsg})
+			return
+		}
+	}
+
+	// 兑换码门禁：开启后必须消耗一个有效兑换码
+	if common.RedemptionCodeRequired {
+		redKey := strings.TrimSpace(user.RedemptionCode)
+		if redKey == "" {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "兑换码不能为空"})
+			return
+		}
+		// 验证兑换码有效性（不消耗，创建用户后消耗）
+		var redCheck model.Redemption
+		if err := model.DB.Where("`key` = ? AND deleted_at IS NULL AND status = ?",
+			redKey, common.RedemptionCodeStatusEnabled).First(&redCheck).Error; err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "兑换码无效"})
+			return
+		}
+		if redCheck.ExpiredTime != 0 && redCheck.ExpiredTime < common.GetTimestamp() {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "兑换码已过期"})
+			return
+		}
+	}
 	user.Username = strings.TrimSpace(user.Username)
 	user.Email = model.NormalizeEmail(user.Email)
 	if user.Username == "" {
@@ -313,6 +346,25 @@ func Register(c *gin.Context) {
 		if err := token.Insert(); err != nil {
 			common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
 			return
+		}
+	}
+
+	// --- 注册成功后消耗门禁码（原子操作，失败不阻塞注册） ---
+	if common.InvitationCodeRequired {
+		invCode := strings.TrimSpace(user.InvitationCode)
+		if invCode != "" {
+			_ = model.ConsumeInvitationCode(invCode)
+		}
+	}
+	if common.RedemptionCodeRequired {
+		redKey := strings.TrimSpace(user.RedemptionCode)
+		if redKey != "" {
+			quota, err := model.Redeem(redKey, insertedUser.Id)
+			if err != nil {
+				common.SysLog(fmt.Sprintf("注册消耗兑换码失败: key=%s user=%d err=%v", redKey, insertedUser.Id, err))
+			} else {
+				model.RecordLog(insertedUser.Id, model.LogTypeTopup, fmt.Sprintf("注册消耗兑换码 %s，获得 %s", redKey, logger.LogQuota(quota)))
+			}
 		}
 	}
 

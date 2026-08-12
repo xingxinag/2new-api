@@ -21,6 +21,7 @@ import { createSectionRegistry } from '../utils/section-registry'
 import { BasicAuthSection } from './basic-auth-section'
 import { BotProtectionSection } from './bot-protection-section'
 import { CustomOAuthSection } from './custom-oauth/custom-oauth-section'
+import { InvitationCodeSection } from './invitation-code/invitation-code-section'
 import { OAuthSection } from './oauth-section'
 import { PasskeySection } from './passkey-section'
 
@@ -35,6 +36,8 @@ const AUTH_SECTIONS = [
           PasswordRegisterEnabled: settings.PasswordRegisterEnabled,
           EmailVerificationEnabled: settings.EmailVerificationEnabled,
           RegisterEnabled: settings.RegisterEnabled,
+          InvitationCodeRequired: settings.InvitationCodeRequired,
+          RedemptionCodeRequired: settings.RedemptionCodeRequired,
           EmailDomainRestrictionEnabled: settings.EmailDomainRestrictionEnabled,
           EmailAliasRestrictionEnabled: settings.EmailAliasRestrictionEnabled,
           EmailDomainWhitelist: settings.EmailDomainWhitelist,
@@ -120,6 +123,11 @@ const AUTH_SECTIONS = [
     build: (settings: AuthSettings) => (
       <CustomOAuthSection serverAddress={settings.ServerAddress} />
     ),
+  },
+  {
+    id: 'invitation-code',
+    titleKey: 'Invitation Codes',
+    build: () => <InvitationCodeSection />,
   },
 ] as const
 

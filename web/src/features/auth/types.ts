@@ -39,7 +39,17 @@ export interface RegisterPayload {
   email?: string
   verification_code?: string
   aff_code?: string
+  invitation_code?: string
+  redemption_code?: string
   turnstile?: string
+}
+
+export interface InvitationVerifyPayload {
+  code: string
+}
+
+export interface RedemptionVerifyPayload {
+  key: string
 }
 
 export interface PasswordResetPayload {

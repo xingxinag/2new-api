@@ -292,6 +292,7 @@ func migrateDB() error {
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&InvitationCode{},
 	)
 	if err != nil {
 		return err

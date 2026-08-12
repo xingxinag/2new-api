@@ -347,6 +347,7 @@ export function Wallet(props: WalletProps) {
                 topupInfo?.payment_compliance_confirmed !== false
               }
               loading={affiliateLoading}
+              userRole={user?.role}
             />
           </div>
         </SectionPageLayout.Content>

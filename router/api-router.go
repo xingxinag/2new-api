@@ -55,6 +55,11 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 
+		// 邀请码验证（公开接口，CriticalRateLimit 防爆破）
+		apiRouter.POST("/invitation/verify", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.VerifyInvitationCode)
+		// 兑换码验证（公开接口，注册门禁用）
+		apiRouter.POST("/redemption/verify", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.VerifyRedemptionCode)
+
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
 		apiRouter.POST("/waffo/webhook", anonymousRequestBodyLimit, controller.WaffoWebhook)
@@ -271,6 +276,18 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		logRoute := apiRouter.Group("/log")
 		logRoute.GET("/", middleware.AdminAuth(), controller.GetAllLogs)
+
+		// 邀请码管理（AdminAuth）
+		invCodeRoute := apiRouter.Group("/invitation-code")
+		invCodeRoute.Use(middleware.AdminAuth())
+		{
+			invCodeRoute.GET("/", controller.GetAllInvitationCodes)
+			invCodeRoute.GET("/search", controller.SearchInvitationCodes)
+			invCodeRoute.GET("/:id", controller.GetInvitationCode)
+			invCodeRoute.POST("/", controller.AddInvitationCode)
+			invCodeRoute.PUT("/:id", controller.UpdateInvitationCode)
+			invCodeRoute.DELETE("/:id", controller.DeleteInvitationCode)
+		}
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)

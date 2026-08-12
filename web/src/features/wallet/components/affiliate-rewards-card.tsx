@@ -16,16 +16,30 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Share2 } from 'lucide-react'
+import { Share2, KeyRound, Loader2, Plus, Trash2, X } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
 import { formatQuota } from '@/lib/format'
+
+import {
+  getInvitationCodes,
+  createInvitationCode,
+  deleteInvitationCode,
+} from '@/features/system-settings/auth/invitation-code/api'
+import type { InvitationCode } from '@/features/system-settings/auth/invitation-code/api'
 
 import type { UserWalletData } from '../types'
 
@@ -35,6 +49,7 @@ interface AffiliateRewardsCardProps {
   onTransfer: () => void
   complianceConfirmed?: boolean
   loading?: boolean
+  userRole?: number
 }
 
 export function AffiliateRewardsCard({
@@ -43,8 +58,16 @@ export function AffiliateRewardsCard({
   onTransfer,
   complianceConfirmed = true,
   loading,
+  userRole = 2,
 }: AffiliateRewardsCardProps) {
   const { t } = useTranslation()
+  const isAdmin = userRole >= 10 // RoleAdminUser=10, RoleRootUser=100
+  const [codeDialogOpen, setCodeDialogOpen] = useState(false)
+  const [codes, setCodes] = useState<InvitationCode[]>([])
+  const [codesLoading, setCodesLoading] = useState(false)
+  const [newCode, setNewCode] = useState('')
+  const [newRemark, setNewRemark] = useState('')
+  const [creating, setCreating] = useState(false)
   if (loading) {
     return (
       <Card data-card-hover='false' className='bg-muted/20 py-0'>
@@ -130,6 +153,127 @@ export function AffiliateRewardsCard({
             )}
           </p>
         ) : null}
+
+        {/* 管理员专属：邀请码管理入口 */}
+        {isAdmin && (
+          <div className='lg:col-span-3'>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => {
+                setCodeDialogOpen(true)
+                setCodesLoading(true)
+                getInvitationCodes(0, 50)
+                  .then((res) => setCodes((res.data?.items as any[]) ?? []))
+                  .catch(() => setCodes([]))
+                  .finally(() => setCodesLoading(false))
+              }}
+              className='gap-1.5'
+            >
+              <KeyRound className='h-3.5 w-3.5' />
+              {t('Invitation Codes')}
+            </Button>
+          </div>
+        )}
+
+        {/* 邀请码管理弹窗 */}
+        {isAdmin && (
+          <Dialog open={codeDialogOpen} onOpenChange={setCodeDialogOpen}>
+            <DialogContent className='max-w-2xl max-h-[80vh] overflow-y-auto'>
+              <DialogHeader>
+                <DialogTitle>{t('Invitation Codes')}</DialogTitle>
+              </DialogHeader>
+              <div className='space-y-3'>
+                <div className='flex gap-2'>
+                  <Input
+                    placeholder={t('Leave empty to auto-generate')}
+                    value={newCode}
+                    onChange={(e) => setNewCode(e.target.value)}
+                    className='max-w-xs'
+                  />
+                  <Input
+                    placeholder={t('Remark')}
+                    value={newRemark}
+                    onChange={(e) => setNewRemark(e.target.value)}
+                    className='max-w-xs'
+                  />
+                  <Button
+                    size='sm'
+                    disabled={creating}
+                    onClick={async () => {
+                      setCreating(true)
+                      try {
+                        await createInvitationCode({
+                          code: newCode || undefined,
+                          remark: newRemark || undefined,
+                        })
+                        setNewCode('')
+                        setNewRemark('')
+                        const res = await getInvitationCodes(0, 50)
+                        setCodes((res.data?.items as any[]) ?? [])
+                      } finally {
+                        setCreating(false)
+                      }
+                    }}
+                  >
+                    {creating ? <Loader2 className='h-3.5 w-3.5 animate-spin' /> : <Plus className='h-3.5 w-3.5' />}
+                    {t('Create')}
+                  </Button>
+                </div>
+                {codesLoading ? (
+                  <div className='py-8 text-center text-sm text-muted-foreground'>{t('Loading...')}</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('Code')}</TableHead>
+                        <TableHead>{t('Used')}</TableHead>
+                        <TableHead>{t('Remark')}</TableHead>
+                        <TableHead>{t('Actions')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {codes.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className='text-center text-muted-foreground text-sm'>
+                            {t('No invitation codes yet.')}
+                          </TableCell>
+                        </TableRow>
+                      ) : codes.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className='font-mono text-xs'>
+                            <span className='inline-flex items-center gap-1'>
+                              {item.code}
+                              <CopyButton value={item.code} size='icon' className='h-5 w-5' />
+                            </span>
+                          </TableCell>
+                          <TableCell className='text-xs'>
+                            {item.used_count} / {item.max_uses === 0 ? '∞' : item.max_uses}
+                          </TableCell>
+                          <TableCell className='text-xs text-muted-foreground truncate max-w-[150px]'>
+                            {item.remark || '—'}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant='ghost' size='sm' className='h-7 w-7 p-0 text-destructive'
+                              onClick={async () => {
+                                await deleteInvitationCode(item.id)
+                                const res = await getInvitationCodes(0, 50)
+                                setCodes((res.data?.items as any[]) ?? [])
+                              }}
+                            >
+                              <Trash2 className='h-3.5 w-3.5' />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </CardContent>
     </Card>
   )

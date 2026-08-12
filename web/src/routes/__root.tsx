@@ -168,6 +168,9 @@ export const Route = createRootRouteWithContext<{
       ])
 
       if (status?.success && status.data && !status.data.status) {
+        // 数据库未初始化，无条件跳 setup（即使 localStorage 缓存过）
+        setSetupStatusCache(false)
+        setupStatusChecked = false
         throw redirect({ to: '/setup' })
       }
       setupStatusChecked = true

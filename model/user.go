@@ -110,6 +110,9 @@ type User struct {
 	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	// 注册门禁：邀请码 + 兑换码（仅请求传入，不入库）
+	InvitationCode string `json:"invitation_code" gorm:"-:all"`
+	RedemptionCode string `json:"redemption_code" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {

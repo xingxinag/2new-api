@@ -38,7 +38,12 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { register, wechatLoginByCode } from '@/features/auth/api'
+import {
+  register,
+  verifyInvitationCode,
+  verifyRedemptionCode,
+  wechatLoginByCode,
+} from '@/features/auth/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { registerFormSchema } from '@/features/auth/constants'
@@ -67,6 +72,15 @@ export function SignUpForm({
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
   const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
+  // 邀请码门禁状态
+  const [invitationCode, setInvitationCode] = useState('')
+  const [isInvitationVerified, setIsInvitationVerified] = useState(false)
+  const [isVerifyingInvitation, setIsVerifyingInvitation] = useState(false)
+  const [isInvitationFromUrl, setIsInvitationFromUrl] = useState(false)
+  // 兑换码门禁状态
+  const [redemptionCode, setRedemptionCode] = useState('')
+  const [isRedemptionVerified, setIsRedemptionVerified] = useState(false)
+  const [isVerifyingRedemption, setIsVerifyingRedemption] = useState(false)
 
   const { status } = useStatus()
   const {
@@ -108,6 +122,27 @@ export function SignUpForm({
     true
   const hasWeChatLogin = Boolean(status?.wechat_login)
   const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
+  const invitationCodeRequired =
+    status?.invitation_code_required ??
+    status?.data?.invitation_code_required ??
+    false
+  const redemptionCodeRequired =
+    status?.redemption_code_required ??
+    status?.data?.redemption_code_required ??
+    false
+  const needsAnyGate = invitationCodeRequired || redemptionCodeRequired
+  // 门禁是否显示：需要门禁时，且对应码未通过验证
+  const showGate =
+    needsAnyGate &&
+    ((invitationCodeRequired && !isInvitationVerified) ||
+      (redemptionCodeRequired && !isRedemptionVerified))
+  // 当前应该显示哪个门禁（顺序：先邀请码，再兑换码）
+  const activeGateType =
+    invitationCodeRequired && !isInvitationVerified
+      ? 'invitation'
+      : redemptionCodeRequired && !isRedemptionVerified
+        ? 'redemption'
+        : null
 
   const wechatQrCodeUrl = useMemo(() => {
     return (
@@ -135,8 +170,83 @@ export function SignUpForm({
     const aff = new URLSearchParams(window.location.search).get('aff')?.trim()
     if (aff) {
       saveAffiliateCode(aff)
+      setInvitationCode(aff)
+      setIsInvitationFromUrl(true)
+      // URL 有邀请码时自动选择邀请码门禁
+      if (invitationCodeRequired) {
+        setIsInvitationFromUrl(true)
+      }
+    }
+    // URL 有 redemption 参数时自动选择兑换码门禁
+    const redemption = new URLSearchParams(window.location.search).get('redemption')?.trim()
+    if (redemption) {
+      setRedemptionCode(redemption)
+      if (redemptionCodeRequired) setGateType('redemption')
     }
   }, [])
+
+  // URL 自动预验证
+  useEffect(() => {
+    if (activeGateType !== 'invitation' || isInvitationVerified || !isInvitationFromUrl) return
+    const code = invitationCode.trim()
+    if (!code) return
+    setIsVerifyingInvitation(true)
+    verifyInvitationCode(code)
+      .then((res) => {
+        if (res?.data?.valid) {
+          setIsInvitationVerified(true)
+          toast.success(t('Invitation code verified'))
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsVerifyingInvitation(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGateType, invitationCode, isInvitationFromUrl])
+
+  async function handleVerifyInvitation() {
+    const code = invitationCode.trim()
+    if (!code) {
+      toast.error(t('Invitation code is required'))
+      return
+    }
+    setIsVerifyingInvitation(true)
+    try {
+      const res = await verifyInvitationCode(code)
+      if (res?.data?.valid) {
+        setIsInvitationVerified(true)
+        toast.success(t('Invitation code verified'))
+      } else {
+        const msg = res?.data?.error_msg || t('Invalid invitation code')
+        toast.error(msg)
+      }
+    } catch {
+      toast.error(t('Invalid invitation code'))
+    } finally {
+      setIsVerifyingInvitation(false)
+    }
+  }
+
+  async function handleVerifyRedemption() {
+    const key = redemptionCode.trim()
+    if (!key) {
+      toast.error(t('Redemption code is required'))
+      return
+    }
+    setIsVerifyingRedemption(true)
+    try {
+      const res = await verifyRedemptionCode(key)
+      if (res?.data?.valid) {
+        setIsRedemptionVerified(true)
+        toast.success(t('Redemption code verified'))
+      } else {
+        toast.error(t('Invalid redemption code'))
+      }
+    } catch {
+      toast.error(t('Invalid redemption code'))
+    } finally {
+      setIsVerifyingRedemption(false)
+    }
+  }
 
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     if (requiresLegalConsent && !agreedToLegal) {
@@ -165,7 +275,9 @@ export function SignUpForm({
         password: data.password,
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
-        aff_code: getAffiliateCode(),
+        aff_code: getAffiliateCode() || undefined,
+        invitation_code: isInvitationVerified ? invitationCode.trim() || undefined : undefined,
+        redemption_code: isRedemptionVerified ? redemptionCode.trim() || undefined : undefined,
         turnstile: turnstileToken,
       })
 
@@ -242,11 +354,88 @@ export function SignUpForm({
 
   return (
     <Form {...form}>
-      <form
-        onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-4', className)}
-        {...props}
-      >
+      {needsAnyGate && showGate ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (activeGateType === 'invitation') handleVerifyInvitation()
+            else handleVerifyRedemption()
+          }}
+          className={cn('grid gap-4', className)}
+          {...props}
+        >
+          {/* 当两个都开启时，顺序提示：先邀请码再兑换码 */}
+          {invitationCodeRequired && redemptionCodeRequired && (
+            <div className='flex gap-2'>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${isInvitationVerified ? 'bg-green-100 text-green-800' : activeGateType === 'invitation' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-500'}`}>
+                {t('Invitation Code')} {isInvitationVerified ? '✓' : ''}
+              </span>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${isRedemptionVerified ? 'bg-green-100 text-green-800' : activeGateType === 'redemption' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-500'}`}>
+                {t('Redemption Code')} {isRedemptionVerified ? '✓' : ''}
+              </span>
+            </div>
+          )}
+
+          {activeGateType === 'invitation' ? (
+            <>
+              <div className='space-y-2'>
+                <FormLabel>{t('Invitation code required')}</FormLabel>
+                <p className='text-muted-foreground text-sm'>
+                  {t('This site requires an invitation code to register')}
+                </p>
+              </div>
+              <Input
+                placeholder={t('Please enter your invitation code')}
+                value={invitationCode}
+                onChange={(e) => setInvitationCode(e.target.value)}
+                autoComplete='off'
+                autoFocus
+              />
+              <Button
+                type='submit'
+                className='mt-2 w-full justify-center gap-2'
+                disabled={isVerifyingInvitation || !invitationCode.trim()}
+              >
+                {isVerifyingInvitation ? (
+                  <Loader2 className='h-4 w-4 animate-spin' />
+                ) : null}
+                {t('Verify')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className='space-y-2'>
+                <FormLabel>{t('Redemption code required')}</FormLabel>
+                <p className='text-muted-foreground text-sm'>
+                  {t('This site requires a redemption code to register')}
+                </p>
+              </div>
+              <Input
+                placeholder={t('Please enter your redemption code')}
+                value={redemptionCode}
+                onChange={(e) => setRedemptionCode(e.target.value)}
+                autoComplete='off'
+                autoFocus
+              />
+              <Button
+                type='submit'
+                className='mt-2 w-full justify-center gap-2'
+                disabled={isVerifyingRedemption || !redemptionCode.trim()}
+              >
+                {isVerifyingRedemption ? (
+                  <Loader2 className='h-4 w-4 animate-spin' />
+                ) : null}
+                {t('Verify')}
+              </Button>
+            </>
+          )}
+        </form>
+      ) : (
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          className={cn('grid gap-4', className)}
+          {...props}
+        >
         {/* Username Field */}
         <FormField
           control={form.control}
@@ -387,7 +576,8 @@ export function SignUpForm({
             className='pt-2'
           />
         )}
-      </form>
+        </form>
+      )}
 
       {hasWeChatLogin && (
         <Dialog
